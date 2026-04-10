@@ -1,6 +1,6 @@
 # MVP-RA-GWAS
 
-This is a repository to host scripts used for analyzing the VA Million Veteran Program and perform genome-wide association study of rheumatoid arthritis (RA) followed by trans-ancestry meta-analyses and functional characterization of significant loci. Reference: Sakaue et al. "Multi-ancestral GWAS with the VA Million Veteran Program enables functional interpretation of rheumatoid arthritis alleles"
+This is a repository to host scripts used for analyzing the VA Million Veteran Program and perform genome-wide association study of rheumatoid arthritis (RA) followed by trans-ancestry meta-analyses and functional characterization of significant loci. Reference: Sakaue, Yang, Zhang et al. "Multi-ancestral GWAS with the VA Million Veteran Program enables functional interpretation of rheumatoid arthritis alleles"
 
 
 
