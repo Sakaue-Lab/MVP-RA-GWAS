@@ -16,5 +16,5 @@ This is a repository to host scripts used for analyzing the VA Million Veteran P
 - `06_gchromvar/` : Cell-type-specific enrichment of fine-mapped variants within ATAC peaks of synovial tissues at single-cell resolution
 - `07_coloc/` : Colocalization of non-coding loci with TenK10K PBMC eQTL data
 - `08_hla/`: HLA omnibus and conditional haplotype tests
-- `09_prs` : PRS training and testing
+- `09_prs/` : PRS training and testing
 
