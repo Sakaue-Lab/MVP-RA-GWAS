@@ -2,34 +2,35 @@
 
 set -o errexit
 set -o nounset
-set -o xtrace
-set +x
+set -o pipefail
 
-#BSUB -G mvp001
-#BSUB -M 93000
-#BSUB -a "multithread(8)"
-#BSUB -q short
-#BSUB -o [PATH]/%J.stdout
-#BSUB -e [PATH]/%J.stderr
+if [[ $# -lt 4 || $# -gt 5 ]]; then
+  echo "Usage: $0 <chromosome> <chunked_pgen_dir> <sample_keep.txt> <output_dir> [plink2]" >&2
+  exit 1
+fi
 
-# Paths and parameters
-chr=22
-dat=[PATH_PGEN]
-odir=[PATH]
-mkdir -p $odir
-keep=[PATH]/[FILE].txt # list of SNPs to keep from clumping
+chromosome=$1
+input_dir=$2
+keep_file=$3
+output_dir=$4
+plink_bin=${5:-plink2}
 
-for chunk in "$dat/chr$chr"/*.pgen; do
-	echo "Processing chunk: $chunk"
-	prefix="${chunk%.pgen}"
-	chunk_base=$(basename "$chunk" .pgen)
+mkdir -p "${output_dir}/chr${chromosome}"
+shopt -s nullglob
+chunks=("${input_dir}/chr${chromosome}"/*.pgen)
+if [[ ${#chunks[@]} -eq 0 ]]; then
+  echo "No PGEN chunks found for chromosome ${chromosome}." >&2
+  exit 1
+fi
 
-	plink2a \
-	--pfile "$prefix" \
-	--keep "$keep" \
-	--make-pgen \
-	--memory 32000 \
-	--out "$odir/${chunk_base}_down"
+for chunk in "${chunks[@]}"; do
+  prefix=${chunk%.pgen}
+  chunk_base=$(basename "${chunk}" .pgen)
+  echo "Downsampling participants in ${chunk_base}"
+  "${plink_bin}" \
+    --pfile "${prefix}" \
+    --keep "${keep_file}" \
+    --make-pgen \
+    --memory 32000 \
+    --out "${output_dir}/chr${chromosome}/${chunk_base}_down"
 done
-
-

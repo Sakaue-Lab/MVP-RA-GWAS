@@ -2,26 +2,36 @@
 
 set -o errexit
 set -o nounset
-set -o xtrace
-set +x
+set -o pipefail
 
-#BSUB -G mvp001
-#BSUB -M 93000
-#BSUB -a "multithread(8)"
-#BSUB -q short
-#BSUB -o [PATH]/%J.stdout
-#BSUB -e [PATH]/%J.stderr
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "Usage: $0 <chromosome> <downsampled_dir> <output_dir> [plink2]" >&2
+  exit 1
+fi
 
-chr=21
+chromosome=$1
+input_dir=$2
+output_dir=$3
+plink_bin=${4:-plink2}
 
-mkdir -p [PATH]
+mkdir -p "${output_dir}/chr${chromosome}"
+prefix_list=$(mktemp "${TMPDIR:-/tmp}/pgen-prefixes.XXXXXX")
+trap 'rm -f "${prefix_list}"' EXIT
 
-ls [PATH]/*.pgen |
-	sed 's/\.pgen$//' > tmp.chunks.prefixes.chr"$chr".txt
+shopt -s nullglob
+chunks=("${input_dir}/chr${chromosome}"/*.pgen)
+if [[ ${#chunks[@]} -eq 0 ]]; then
+  echo "No downsampled PGEN chunks found for chromosome ${chromosome}." >&2
+  exit 1
+fi
 
-plink2a \
---pmerge-list tmp.chunks.prefixes.chr"$chr".txt \
---make-pgen \
---threads 8 \
---memory 8000 \
---out [PATH]/merged/chr$chr/merged_chr$chr
+for chunk in "${chunks[@]}"; do
+  printf '%s\n' "${chunk%.pgen}" >> "${prefix_list}"
+done
+
+"${plink_bin}" \
+  --pmerge-list "${prefix_list}" \
+  --make-pgen \
+  --threads 8 \
+  --memory 8000 \
+  --out "${output_dir}/chr${chromosome}/merged_chr${chromosome}"

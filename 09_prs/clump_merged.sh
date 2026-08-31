@@ -2,95 +2,62 @@
 
 set -o errexit
 set -o nounset
-set -o xtrace
-set +x
+set -o pipefail
 
-#BSUB -G mvp001
-#BSUB -M 93000
-#BSUB -a "multithread(8)"
-#BSUB -q short
-#BSUB -o [PATH]/%J.stdout
-#BSUB -e [PATH]/%J.stderr
+if [[ $# -lt 4 || $# -gt 5 ]]; then
+  echo "Usage: $0 <merged_pgen_dir> <gwas_weights.csv> <p_threshold> <output_dir> [plink2]" >&2
+  exit 1
+fi
 
-p=0.00000005
+merged_dir=$1
+gwas_file=$2
+p_threshold=$3
+output_dir=$4
+plink_bin=${5:-plink2}
+r_squared=0.2
 
-for chr in $(seq 1 22);do
-# Paths and parameters
-gwasres=[PATH]/[FILE].csv # csv with columns: (1) SNP name, (2) beta, (3) p-value
-datdir=[PATH]
-odir=[PATH]/$p/$chr
-mkdir -p "$odir"
-dat=[PATH]
-rsq=0.2
+for chromosome in $(seq 1 22); do
+  pgen_prefix="${merged_dir}/chr${chromosome}/merged_chr${chromosome}"
+  if [[ ! -f "${pgen_prefix}.pgen" ]]; then
+    echo "Skipping chromosome ${chromosome}: merged PGEN not found."
+    continue
+  fi
 
-# Prepare SNP list
-input_snps_csv="$datdir/[FILE].csv" # list of SNPs
-tail -n +2 "$input_snps_csv" | cut -d, -f1 > "$odir/tmp01"
+  chromosome_dir="${output_dir}/${p_threshold}/chr${chromosome}"
+  mkdir -p "${chromosome_dir}"
+  clump_input=$(mktemp "${TMPDIR:-/tmp}/clump-input.XXXXXX")
+  trap 'rm -f "${clump_input}"' EXIT
 
-# Filter GWAS results to common SNPs
-head -1 "$gwasres" > "$odir/tmp.gwasres.filt_common.csv"
-tail -n +2 "$gwasres" |
-  awk -F, 'NR==FNR { snps[$1]; next } $1 in snps' "$odir/tmp01" - >> "$odir/tmp.gwasres.filt_common.csv"
+  printf 'ID\tP\n' > "${clump_input}"
+  awk -F',' -v chromosome="chr${chromosome}" -v OFS='\t' '
+    NR == 1 {
+      for (i = 1; i <= NF; i++) column[$i] = i
+      if (!("ID" in column) || !("P" in column)) exit 2
+      next
+    }
+    $(column["ID"]) ~ ("^" chromosome ":") {
+      print $(column["ID"]), $(column["P"])
+    }
+  ' "${gwas_file}" >> "${clump_input}"
 
-# Loop over top-percent thresholds
-top=100
-	total=$(( $(wc -l < "$odir/tmp.gwasres.filt_common.csv") - 1 ))
-	keep=$(( total * top / 100 ))
-	echo "Keeping top $keep SNPs ($top%)"
+  if [[ $(wc -l < "${clump_input}") -le 1 ]]; then
+    echo "No GWAS variants found for chromosome ${chromosome}."
+    rm -f "${clump_input}"
+    trap - EXIT
+    continue
+  fi
 
-	# Create top-% GWAS file
-	awkgwas="$odir/tmp.${top}.gwasres.csv"
-	head -1 "$odir/tmp.gwasres.filt_common.csv" > "$awkgwas"
-	tail -n +2 "$odir/tmp.gwasres.filt_common.csv" |
-	  sort -t, -k3,3g |
-	  head -n "$keep" >> "$awkgwas"
+  "${plink_bin}" \
+    --pfile "${pgen_prefix}" \
+    --clump "${clump_input}" \
+    --clump-p1 "${p_threshold}" \
+    --clump-r2 "${r_squared}" \
+    --clump-unphased \
+    --chr "${chromosome}" \
+    --threads 1 \
+    --memory 8000 \
+    --out "${chromosome_dir}/merged_chr${chromosome}"
 
-	  # Process each .pgen chunk
-	  for chunk in $dat/merged/chr$chr/*.pgen; do
-	    echo "Processing chunk: $chunk"
-
-	    # Derive prefix for plink and sanitized base name for files
-	    prefix="${chunk%.pgen}"
-	    chunk_base=$(basename "$chunk" .pgen)
-
-	    # Prepare per-chr GWAS input for PLINK
-	    plink_input="$odir/tmp.${top}.${chr}.gwasres"
-	    echo "SNP P" > "$plink_input"
-	    awk -F, -v chr="$chr" '
-		{ id = $1 
-		  gsub(/^"|"$/, "", id) }
-		id ~ ("^chr" chr ":") { print $1" "$3 }' \
-	      "$awkgwas" >> "$plink_input"
-	
-	    if [[ ! -s "$plink_input" ]]; then
-		echo "WARNING: $plink_input is empty; skipping chr$chr plink clump"
-		continue
-	    fi	
-
-	    # Run PLINK2 clumping
-	    plink2a \
-		--pfile "$prefix" \
-		--clump "$plink_input" \
-		--clump-p1 "$p" \
-		--clump-r2 "$rsq" \
-		--clump-unphased \
-		--chr "$chr" \
-		--threads 1 \
-		--memory 8000 \
-		--out "$odir/${top}.${chr}.${chunk_base}"
-
-	    # Extract kept SNPs
-	    clumped_file="$odir/${top}.${chr}.${chunk_base}.clumps"
-	    
-	    # Guard: skip if no clumps found
-	    if [[ ! -f "$clumped_file" ]]; then
-		echo "No .clumps file found -- likely no significant clumps for chr$chr chunk $chunk_base"
-		rm -f "$odir/${top}.${chr}.${chunk_base}.*"
-		continue
-	    fi
-	    # Cleanup chunk temps
-	    rm -f "$odir/tmp.${top}.${chr}.${chunk_base}.*"
-	  done
-	rm $odir/tmp*
+  rm -f "${clump_input}"
+  trap - EXIT
 done
-

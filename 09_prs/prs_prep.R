@@ -1,74 +1,63 @@
-library(dplyr)
-library(data.table)
-library(tidyr)
+#!/usr/bin/env Rscript
 
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+})
 
-# Prep for clumping
-dat = fread("[PATH]/[FILE].csv")
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 3) {
+  stop(
+    paste(
+      "Usage: Rscript 09_prs/prs_prep.R <metal_output.txt>",
+      "<snp_list.csv> <gwas_weights.csv>"
+    ),
+    call. = FALSE
+  )
+}
 
-dat = dat %>% 
-  filter(!is.na(Chr),
-         nchar(ID)>0) %>%
-  select(ID)
-colnames(dat)="ID"
-write.csv(dat,
-          "[PATH]/snp_list_trans.csv",
-          row.names = F,
-          quote = F)
+metal_file <- args[1]
+snp_output <- args[2]
+gwas_output <- args[3]
 
-dat = rbind(tmp1, tmp2)
-dat = dat %>% 
-  select(ID,Effect,PValue,StdErr,Allele1,Allele2) %>%
-  filter(nchar(ID)>0)
-colnames(dat)=c("ID","Beta","P","SE","Allele1","Allele2")
-write.csv(dat,
-          "[PATH]/gwas_trans.csv",
-          row.names = F,
-          quote = F)
+dat <- fread(metal_file)
+required <- c("MarkerName", "Effect", "StdErr", "P-value", "Allele1", "Allele2")
+missing_columns <- setdiff(required, names(dat))
+if (length(missing_columns) > 0) {
+  stop("Missing METAL column(s): ", paste(missing_columns, collapse = ", "))
+}
 
-fix = read.csv("[PATH]/snp_list_trans.csv")
-colnames(fix) = "ID"
-fix %>% write.csv("[PATH]/snp_list_trans.csv",
-                  row.names = F,
-                  quote = F)
+marker_fields <- tstrsplit(dat$MarkerName, ":", fixed = TRUE)
+if (length(marker_fields) != 4) {
+  stop("MarkerName must use chr:position:ref:alt format.")
+}
 
-fix = fread("[PATH]/gwas_trans.csv")
-colnames(fix) = c("ID","Beta","P","SE","Allele1","Allele2")
-fix %>% write.csv("[PATH]/gwas_trans.csv",
-                  row.names = F,
-                  quote = F)
+gwas <- dat %>%
+  transmute(
+    ID = as.character(MarkerName),
+    Chr = marker_fields[[1]],
+    Pos = as.numeric(marker_fields[[2]]),
+    Beta = as.numeric(Effect),
+    P = as.numeric(`P-value`),
+    SE = as.numeric(StdErr),
+    A1 = as.character(Allele1),
+    A2 = as.character(Allele2)
+  ) %>%
+  filter(
+    !is.na(Chr),
+    nzchar(ID),
+    is.finite(Pos),
+    is.finite(Beta),
+    is.finite(P),
+    !(Chr == "chr6" & Pos >= 25e6 & Pos <= 35e6)
+  )
 
-#########
-# Remove MHC
-library(dplyr)
-library(data.table)
-library(tidyr)
-
-snplist = fread("[PATH]/snp_list_trans.csv")
-snplist = snplist %>% separate_wider_delim(ID,
-                                           names=c("Chr", "Pos", "Ref", "Alt"),
-                                           delim=":",
-                                           too_many="merge",
-                                           cols_remove=F)
-snplist$Pos = as.numeric(snplist$Pos)
-snplist = snplist %>% filter(!(Chr=="chr6" & Pos >= 25e6 & Pos <= 35e6))
-snplist = snplist %>% select(ID)
-snplist %>% write.csv("[PATH]/snp_list_trans_MHCrm.csv",
-                      row.names = F,
-                      quote = F)
-
-gwas = fread("[PATH]/gwas_trans.csv")
-gwas = gwas %>% filter(ID %in% snplist$ID)
-gwas %>% write.csv("[PATH]/gwas_trans_MHCrm.csv",
-                   row.names = F,
-                   quote = F)
-
-#########
-# Downsample IDs for clumping
-set.seed(123)
-eur_split = fread("[PATH]/[FILE].txt") # IDs
-eur_split = eur_split[sample(1:nrow(eur_split), 10000),]
-
-write.table(eur_split, "clump_eur_keep.txt", 
-            quote=F, sep="\t", row.names=F, col.names=F)
-
+dir.create(dirname(snp_output), recursive = TRUE, showWarnings = FALSE)
+dir.create(dirname(gwas_output), recursive = TRUE, showWarnings = FALSE)
+write.csv(select(gwas, ID), snp_output, row.names = FALSE, quote = FALSE)
+write.csv(
+  select(gwas, ID, Beta, P, SE, A1, A2),
+  gwas_output,
+  row.names = FALSE,
+  quote = FALSE
+)

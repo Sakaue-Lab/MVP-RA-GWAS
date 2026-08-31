@@ -10,7 +10,7 @@ egenes<-fread("/path_to/ST4.txt.gz")
 res<-data.frame()
 
 for(cell in celltypes){
-  d<-fread(paste0("/data/srlab/ssakaue/data/TenK10K/",cell,"_common_all_cis_raw_pvalues_1000000bp.tsv.gz"))
+  d<-fread(paste0("/path_to/TenK10K/",cell,"_common_all_cis_raw_pvalues_1000000bp.tsv.gz"))
   egene_list<-egenes[egenes$`Cell Type` == cell,]$`Gene (Ensembl gene ID)`
   d<-d[d$gene %in% egene_list,]
   for(categ in c("trans","eur","trans_seropos","eur_seropos")){

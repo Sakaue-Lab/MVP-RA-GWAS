@@ -4,21 +4,22 @@ library(stringr)
 library(data.table)
 library(ggplot2)
 
-maf = readRDS(file="[FILE].RDS")
-info = read.csv("[FILE].csv") # HLA dictionary
-covar = fread("[FILE].txt")
-covar$mvp001_id=as.character(covar$mvp001_id)
+args = commandArgs(trailingOnly = TRUE)
+if(length(args) != 6) stop("Usage: Rscript cond_haplo_kern.R <dictionary.csv> <covariates.txt> <dosages.raw> <exclude.csv> <variants.pvar> <output.csv>")
+info = read.csv(args[1]) # HLA dictionary
+covar = fread(args[2])
+covar$id=as.character(covar$id)
 covar=data.frame(covar)
 
-hla.two <- fread("[FILE].raw") # HLA AA dosage unphased
+hla.two <- fread(args[3]) # HLA AA dosage unphased
 hla.two = data.frame(hla.two)
 hla.two$IID=as.character(hla.two$IID)
 
-exclude = fread("[FILE].csv") # exclude related
-covar = covar %>% filter(!(mvp001_id %in% exclude$IID))
+exclude = fread(args[4]) # exclude related
+covar = covar %>% filter(!(id %in% exclude$IID))
 
 ### Post-Impute QC
-r2 = fread("[FILE].pvar")
+r2 = fread(args[5])
 r2$r2 = unlist(lapply(r2$INFO,FUN=function(ll){
   junk = (strsplit(ll,";")[[1]][3])
   return(as.numeric(strsplit(junk,"=")[[1]][2]))
@@ -91,11 +92,11 @@ revise = gsub("_T..A.","",revise)
 revise = gsub("[.]","_",revise)
 colnames(hla.allele)[-1]=revise
 
-keep = intersect(covar$mvp001_id,hla.allele$IID)
-tmp = covar %>% filter(mvp001_id %in% keep)
+keep = intersect(covar$id,hla.allele$IID)
+tmp = covar %>% filter(id %in% keep)
 dat = left_join(tmp,
                 hla.allele,
-                  by=c("mvp001_id"="IID"))
+                  by=c("id"="IID"))
 dat = as.data.frame(dat)
 
 rd1 = NULL
@@ -112,7 +113,7 @@ for(anc in c("AFR","EUR")){
     for(thishap in thishaps){
       hlas = as.character(subset(res,hap==thishap)$hla)
       hlas=hlas[hlas %in% colnames(dat)]
-    if(length(hlas>0)){
+    if(length(hlas)>0){
       dat$thishap = rowSums(dat[hlas])
       colnames(dat)[ncol(dat)] =thishap
       adopted = c(adopted,thishap)
@@ -139,7 +140,7 @@ rd1.export = rbind.data.frame(rd1.export,
 
 }
 
+dir.create(dirname(args[6]), recursive=TRUE, showWarnings=FALSE)
 write.csv(rd1.export,
           row.names = F,
-          file="[FILE].csv")
-
+          file=args[6])
