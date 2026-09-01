@@ -8,7 +8,6 @@ Each directory contains their README as well to guide the reproduction of our re
 
 - `01_phenotype/` : KOMAP Phenotyping of RA in the MVP
   - komap_calib.R: defining phenotype
-  - library_roc.R: functions for ROC calculation (smoothing via linear approximation
 - `02_mvp_gwas/` : GWAS script for the MVP using REGENIE
 - `03_meta_analyses/` : Meta-analayses among MVP and between MVP and RACI
 - `04_locus_define_finemap/` : Identify significant loci, loci annotation, fine mapping
